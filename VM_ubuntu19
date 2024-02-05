@@ -1,0 +1,136 @@
+# Always use the required_providers block to specify the required provider version.
+# Azure provider source and version being used
+terraform {
+  required_providers {
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = "=3.0.0"
+    }
+  }
+}
+
+# Configure the Azure provider
+provider "azurerm" {
+  features {}
+}
+
+# Create a resource group
+resource "azurerm_resource_group" "aalvarado_testrg" {
+  name     = "aalvarado-testrg"
+  location = "East US"
+  
+}
+
+# Create a virtual network
+resource "azurerm_virtual_network" "aalvarado_testvnet" {
+  name                = "aalvarado-testvnet"
+  location            = azurerm_resource_group.aalvarado_testrg.location
+  resource_group_name = azurerm_resource_group.aalvarado_testrg.name
+  address_space       = ["10.0.0.0/16"]
+}
+
+# Create a subnet
+resource "azurerm_subnet" "aalvarado_testsubnet" {
+  name                 = "aalvarado-testsubnet"
+  resource_group_name  = azurerm_resource_group.aalvarado_testrg.name
+  virtual_network_name = azurerm_virtual_network.aalvarado_testvnet.name
+  address_prefixes     = ["10.0.1.0/24"]
+}
+
+# Create a public IP address
+resource "azurerm_public_ip" "aalvarado_testpip" {
+  name                = "aalvarado-testpip"
+  location            = azurerm_resource_group.aalvarado_testrg.location
+  resource_group_name = azurerm_resource_group.aalvarado_testrg.name
+  allocation_method   = "Dynamic"
+}
+
+# create a network security group
+# Always change the Source IP to your IP address
+resource "azurerm_network_security_group" "aalvarado_testnsg" {
+  name                = "aalvarado-testnsg"
+  location            = azurerm_resource_group.aalvarado_testrg.location
+  resource_group_name = azurerm_resource_group.aalvarado_testrg.name
+
+  security_rule {
+    name                       = "SSH"
+    priority                   = 1001
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "22"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+  security_rule {  
+    name                       = "HTTP"
+    priority                   = 1002
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "80"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+    }
+}
+
+# connect the public IP address to the network security group
+resource "azurerm_public_ip_network_security_group_association" "aalvarado_testpip_nsg_association" {
+  public_ip_address_id    = azurerm_public_ip.aalvarado_testpip.id
+  network_security_group_id = azurerm_network_security_group.aalvarado_testnsg.id
+}
+
+# Create a Virtual Machine Network Interface
+resource "azurerm_network_interface" "aalvarado_testnic" {
+  name                = "aalvarado-testnic"
+  location            = azurerm_resource_group.aalvarado_testrg.location
+  resource_group_name = azurerm_resource_group.aalvarado_testrg.name
+
+  ip_configuration {
+    name                          = "aalvarado-testnic-ipconfig"
+    subnet_id                     = azurerm_subnet.aalvarado_testsubnet.id
+    private_ip_address_allocation = "Dynamic"
+  }
+}
+
+# Connect the network interface to the network security group
+resource "azurerm_network_interface_security_group_association" "aalvarado_testnic_nsg_association" {
+  network_interface_id      = azurerm_network_interface.aalvarado_testnic.id
+  network_security_group_id = azurerm_network_security_group.aalvarado_testnsg.id
+}
+
+
+# Create a virtual machine
+resource "azurerm_virtual_machine" "aalvarado_testvm" {
+  name                  = "aalvarado-testvm"
+  location              = azurerm_resource_group.aalvarado_testrg.location
+  resource_group_name   = azurerm_resource_group.aalvarado_testrg.name
+  network_interface_ids = [azurerm_network_interface.aalvarado_testnic.id]
+  vm_size               = "Standard_D2s_v4"
+
+  storage_image_reference {
+    publisher = "Canonical"
+    offer     = "UbuntuServer"
+    sku       = "19.04"
+    version   = "latest"
+  }
+
+  storage_os_disk {
+    name              = "aalvarado-testvm-osdisk"
+    caching           = "ReadWrite"
+    create_option     = "FromImage"
+    managed_disk_type = "Premium_LRS"
+  }
+
+  os_profile {
+    computer_name  = "aalvarado-testvm"
+    admin_username = "aalvarado"
+    admin_password = "" # Always use a variable to store the password
+  }
+
+  os_profile_linux_config {
+    disable_password_authentication = false
+  }
+}
